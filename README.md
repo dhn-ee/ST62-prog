@@ -30,4 +30,9 @@ This programmer does not perform a blank check because the reserved areas are ta
 
 Blank bytes are 0 therefore this programmer will skip over 0 in the rom image data.  Because of hard real-time requirements (see DESIGN.txt) do not call st62_program_region() with a region that contains many consecutive 0.  Break it up into multiple calls for smaller regions with no consecutive 0.
 
-More details are in DESIGN.txt and SPEC.txt
+More details in DESIGN.txt and SPEC.txt
+
+## History
+Programmer experiments and fine tuning were performed on a spare ST62T45B soldered to an adapter board (couldn't obtain a reasonably priced UV window version).  This was necessary because of vague/missing information in the Programming Specification document (details in SPEC.txt).  This picture shows the boards used plus the programmer connected for in-circuit programming of a target device.
+
+![Programmer hardware interface and test cpu adapter](docs/pcb_collage.jpg)
