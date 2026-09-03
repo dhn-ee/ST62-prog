@@ -1,0 +1,43 @@
+
+The document "ST62 & ST63 FAMILIES 8-BIT MICROCONTROLLERS OTP / EPROM
+PROGRAMMING SPECIFICATION (Rev 3.2 October 1998)" lacks important details.  It
+doesn't clearly show which clock edge is used to latch input or output signals
+and whether outputs change in the current or previous cycle.  In places its
+descriptions seem to be off by 1 cycle.  A simple waveform diagram would have
+eliminated confusion and about 10 pages of text.
+
+1 ST62 machine cycle is 13 clock cycles (T1-T13)
+
+In serial test mode the CPU input data (TROMIN) is latched on rising edge and
+has to be setup during the previous cycle which is normal and expected.
+However CPU output data (SDOP) for cycle T(n) is meant to be latched on or just
+before rising edge of T(n) so it is also output during previous cycle T(n-1).
+SDOP will change very soon after rising edge.  When programming EPROM,
+delay T13 start by stretching T12 clock low phase for 1ms:
+                      ________          ________          ________
+_____________________|   T13  |________|   T1   |________|   T2   |____
+        ^                 ^           ^     ^           ^
+   extend T12 low      write T1   read T1   write T2   read T2
+  when programming      TROMIN     SDOP      TROMIN     SDOP
+
+
+
+PIO bitloop X=
+11     10       9       8       7       6       5       4       3       2
+__     ___     ___     ___     ___     ___     ___     ___     ___     ___
+  |___|   |___|   |___|   |___|   |___|   |___|   |___|   |___|   |___|   |_
+       T1      T2      T3      T4      T5      T6      T7      T8      T9
+
+X=      1       0      -1      11
+       ___     ___     ___     ___     __
+    __|   |___|   |___|   |___|   |___|
+       T10     T11     T12     T13
+
+
+ST62T45B undocumented SDOP synchronization 1st internal cycle CYCI T1-T13
+__     ___     ___     ___         ___     ___     ___     ___     ___
+  |___|   |___|   |___|   |_  .. _|   |___|   |___|   |___|   |___|   |_
+               T1      T2          T10     T11     T12     T13     T1
+    ___         ___________________________________                 ____
+SDOP   |_______|                                   |_______________|
+
