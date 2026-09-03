@@ -1,6 +1,6 @@
-# ST62-prog
+![ST62-prog](docs/header.jpg)
 
-This project is a programmer for ST62/ST63 cpu internal EPROM/EEPROM controlled by a Raspberry Pi Pico2.  It has sucessfully programmed several ST62T45B in-circuit.
+This project is a standalone programmer for ST62/ST63 cpu internal EPROM/EEPROM controlled by a Raspberry Pi Pico2.  It has sucessfully programmed several ST62T45B in-circuit.
 
 All known previous programmers for these chips were implemented using the PC parallel printer port and proprietary software running on DOS or early Windows and are no longer readily available.
 
@@ -16,8 +16,8 @@ pico
 pico/pico-sdk
 pico/pico-examples
 ```
-Create `pico/pico-projects` and put this project into `pico/pico-projects/ST62-prog`. Copy CMakeLists.txt from pico-examples into pico-projects and edit to replace the list of add_subdirectory() at the end with this line:
-`add_subdirectory_exclude_platforms(ST62-prog)`. The following steps (Linux) in pico-projects directory will setup the project Makefiles:
+Create `pico/pico-projects` and put this project into `pico/pico-projects/ST62-prog`. Copy CMakeLists.txt from pico-examples into pico-projects and edit to replace all add_subdirectory*() at the end with this line:
+`add_subdirectory_exclude_platforms(ST62-prog)`  The following steps (Linux) in pico-projects directory will setup the project Makefiles:
 ```
 mkdir build
 cd build
@@ -35,7 +35,7 @@ mv st62_prog.uf2 st62_prog-DUMP.uf2
 ```
 
 ### HARDWARE
-1.  Build the programmer hardware interface from schematic (component choices described in DESIGN.txt).  It's simple enough to build on perfboard so no pcb design provided.
+1.  Build the programmer hardware interface from schematic.pdf (component choices described in DESIGN.txt).  It's simple enough to build on perfboard/breadboard so no pcb design provided.
 2.  Find your target cpu pin assignments in Table 2 or 3 of the Programming Specification document.  Make sure the target board doesn't connect any of the 6 signal pins directly to VDD/VSS.
 3.  After initial tests (see below) without a target cpu, connect 8 wires from the interface to the target or adapter board pins identified in step 2 (header, pogo pins, or solder doesn't matter).  The target cpu must be powered by the programmer or uncontrolled EPROM programming may occur.
 
@@ -43,7 +43,7 @@ In-circuit programming requires special care.  My target board had a supercap on
 
 After building the interface and configuring/compiling the firmware (with define DISABLE_CHECKS), power the Pico2 without a target cpu connected.  You'll be able to see led behavior and serial output as well as check output signals with an oscilloscope or logic analyzer.  Be sure to comment out `define DISABLE_CHECKS` when done.
 
-Firmware text output uses serial UART, not the Pico2 USB connection, which would delay start up and output pin drive by 3-4 seconds, but needs a TTL to USB adapter 😕. Free serial terminal programs: picocom (Linux), kitty (Windows)
+Firmware text output uses serial UART (needs a TTL to USB adapter) instead of the Pico2 USB connection because USB would power the Pico2 and target complicating power sequencing, won't provide >=5V to the target, and would delay start up and output pin drive by 3-4 seconds. Free serial terminal programs: picocom (Linux), kitty (Windows)
 ```
 picocom -q -b 115200 -r -l /dev/ttyUSB0    or    /dev/ttyACM0
 ```
@@ -56,7 +56,10 @@ This programmer does not perform a blank check because the reserved areas are ta
 
 Blank bytes are 0 therefore this programmer will skip over 0 in the rom image data.  Because of hard real-time requirements (see DESIGN.txt) do not call st62_program_region() with a region that contains many consecutive 0.  Break it up into multiple calls for smaller regions with no consecutive 0.
 
-More details in DESIGN.txt and SPEC.txt
+## Resources
+More details in DESIGN.txt and SPEC.txt  
+Post with [ST62 & ST63 FAMILIES 8-BIT MICROCONTROLLERS OTP / EPROM PROGRAMMING SPECIFICATION](https://www.eevblog.com/forum/microcontrollers/need-to-programm-a-st62t10-mcu-help-finding-a-cheap-programmer/msg1620967/#msg1620967)  
+[Comprehensive ST62 hw/sw info](http://matthieu.benoit.free.fr/st6.htm) (French)
 
 ## History
 Programmer experiments and fine tuning were performed on a spare ST62T45B soldered to an adapter board (couldn't obtain a reasonably priced UV window version).  This was necessary because of vague/missing information in the Programming Specification document (details in SPEC.txt).  This picture shows the boards used plus the programmer connected for in-circuit programming of a target device.
