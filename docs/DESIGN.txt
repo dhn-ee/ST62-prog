@@ -1,0 +1,74 @@
+                       ST62/ST63 Programmer Design Notes
+
+The target cpu 1 clock cycle is 40 PIO clock cycles.  This allows fine timing
+control of input/output signals while keeping pio delay values small (<32).
+
+  default 150MHz Pico2 clock / 3 = 50MHz PIO clock
+  50MHz / 40 = 1.25MHz target cpu clock
+
+
+This code has a hard real-time requirement:
+The ST62 machine cycle has 13 clock cycles (T1-T13) taking 13*0.8us = 10.4us.
+That gives 1560 cycles of the Pico2 150MHz clock during which all setup for
+the next machine cycle must be completed and call st62_Mcycle().  If this
+requirement isn't met the target cpu will no longer be synchronized with the
+programmer.  Therefore all critical code must be placed in SRAM and all
+non-critical code (printf, etc.) cannot be executed until after
+programming/dumping is complete.  At that time send a NOP to the target to set
+TROMIN=0 and the real-time requirement ends.  No more calls to st62_Mcycle()
+and PIO sm1 will hang and sm0 will keep generating OSCIN clock forever which
+with TROMIN=0 causes the target cpu to execute NOP forever.  Could also assert
+RESET_ to keep target in reset.
+
+GPIO pins:
+GP0  UART0 TX (serial output)
+GP1  UART0 RX
+
+PIO pin usage:
+GP11  in        ST62 SDOP
+GP13  set       VPP enable
+GP14  set,out   ST62 TROMIN  (may configure output pad invert)
+GP15  set       ST62 RESET_  (always configure output pad invert)
+GP17  sideset   ST62 OSCIN
+
+
+2 state machines in 1 PIO block (27 total instructions) run concurrently with
+the main program on 1 cpu core:
+
+PIO sm0 (onecycle):
+This state-machine generates the free-running target cpu clock OSCIN that can
+be gated (held low) during programming.
+
+PIO sm1 (mainloop):
+This state-machine resets the target cpu, establishes synchronization, and
+performs up to 4 different carefully timed actions during a 13-clock machine
+cycle (T1-T13)
+1. T1-T8 shift OSR lsb data out to TROMIN
+2. T8 set/clear VPP by shifting and executing a 16-bit pio instruction off OSR
+3. T9-T13 shift OSR zeros out to TROMIN
+4. T12 when programming delay T13 start by extending clock low for 1ms
+
+Changing VPP during T8 was implemented because the spec describes it but in
+practice isn't useful because VPP takes more than 400ns to stabilize.  Target
+boards often have a 0.1uF cap on VPP which delays the rise by 20us and fall by
+100uS which was handled by adding NOP instructions to the stream (1 for rising,
+5 for falling).  This means that we cannot program a byte with LDI, turn off
+VPP and read the byte with LD on the next instruction.  Therefore when
+PIO_PROGRAM_PROM=1, VPP is constantly enabled through reset, synchronization
+and programming of all bytes, then VPP is disabled before dumping out the
+EPROM.
+
+The spec recommends programming each byte a 2nd time after the 1st successful
+programming, described as "one security programming count", to enforce the cell
+margin.  st62_program_byte() does this by attempting programming up to 5 times
+and returning when the cell data from before the current programming attempt
+(output 3rd Mcycle of LDI) matches.  For a blank chip the previous value will
+be 0 on the 1st attempt and should match on the 2nd attempt.
+
+Interface circuit:
+The output buffer U1 can be any 5V buffer that is compatible with 3.3V inputs.
+Diode D1 can be any Schottky with Vf around 0.4-0.5 at 10mA.  The VPP switch
+circuit has a much faster turn off time using the NPN current source rather
+than emitter follower.  VPP power supply can be 12.8-13.2V.  13.1V worked very
+well (all cells programmed on 1st attempt)
+
