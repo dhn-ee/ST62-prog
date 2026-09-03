@@ -1,0 +1,199 @@
+
+; can't use main program defines here, so define here and use in main program
+
+;;;;;;;;;;;;;;;;
+; programmer control defines (must be 0 or 1)
+; can't program both PROM and EEPROM in same session because of sync checks
+; PIO_PROGRAM_EEPROM PIO_PROGRAM_PROM  action
+;        0                0            dump PROM banks 02-3F
+;        0                1            program PROM then dump PROM banks 02-3F
+;        1                0            program EEPROM then dump EEPROM banks 0-1
+;        1                1            not allowed
+
+	; also gives initial output pin values (RESET_=0, TROMIN=0, VPP=0 or 1)
+.define PUBLIC PIO_PROGRAM_PROM 0
+
+.define PUBLIC PIO_PROGRAM_EEPROM 0
+
+;;;;;;;;;;;;;;;;
+; target cpu option defines (must be 0 or 1)
+	; RESET_ output pad always set to invert signal (out 1 makes wire=0)
+	; TROMIN output pad may be set to invert signal (out 0 makes wire=1)
+	; ST62T45B TROMIN is active low
+.define PUBLIC INVERT_TROMIN 1
+
+	; SDOP input pad may be set to invert signal (wire=1 makes in 0)
+	; ST63EXX SDOP is active low
+; .define PUBLIC INVERT_SDOP 1
+
+
+	; one 1.25MHz clock cycle (40 PIO clocks @50MHz)
+	; pck = 1 PIO clk cycle
+	; irq0 set 16 pck after fall edge, cleared 11 pck later
+	; irq1 set 8 pck after rise edge
+	; irq5 set during T12 to extend low clock if pull data msb=1
+.program onecycle
+.side_set 1
+
+.wrap_target
+    wait 0 irq 5  side 0  [15]	; 00: clk falling edge (irq5 extends low phase)
+    irq set 0  side 0  [3]	; 17: signals 16 pck after fall edge
+    nop  side 1  [6]		; 20: clk rising edge
+    irq clear 0	 side 1		; clear irq0 so it isn't "sticky"
+    irq set 1  side 1  [11]	; 29: signals 8 pck after rise edge
+.wrap
+
+
+;;;;;;;;;;;;;;;;
+.program mainloop
+	; external initialization before sm enable:
+	;   set pins, 4 or 5 (RESET_=1, TROMIN=0, VPP=0 or 1)
+	;   x=256 (reset cycles)
+	;   y=2048+13-1 (sync cycles after reset=1)
+
+rstloop:			; reset active; clock X cycles
+    wait 1 irq 1		; clk rising edge
+    jmp x-- rstloop
+    set pins, PIO_PROGRAM_PROM	; (RESET_=0, TROMIN=0, keep VPP=0 or 1)
+
+syncloop:			; reset off; clock Y cycles for synchronization
+    wait 1 irq 1		; clk rising edge
+    jmp y-- syncloop
+
+    set y, 3			; change VPP before T9 (x=3)
+.wrap_target
+	; ST62 core machine cycle loop (T1-T13)
+	; before r-edge T1-T8 shift OSR data out to TROMIN
+	; before T9 shift OSR+execute 16-bit instruction to set/clear VPP
+	; before r-edge T9-T13 shift OSR zeros out to TROMIN
+	; before T13 if remaining OSR!=0 then extend low clock (delay T13)
+    pull			; 32-bit packed data/instruction
+    in NULL, 20			; align lsb of previous 12-bit input data and
+    push			; send to main prog
+    set x, 11			; loop 12 times
+bitloop:			; ST62 core cycles T1-T12
+    wait 1 irq 1		; clk rising edge + 9 pck
+    jmp x!=y skipvpp		; ST62 core cycle T8 (x=3)
+    out exec, 16		; execute 'set pins, 1/0' to set/clear VPP
+skipvpp:
+    out pins, 1			; shifts lsb out 11 pck after clk rise
+    wait 1 irq 0 [1]		; clk falling edge + 17 pck
+    in pins, 1			; shift in SDOP just before clk rise edge
+    jmp x-- bitloop
+				; unroll end of loop for T13 setup/clk stretch
+    wait 1 irq 1		; in T12 high phase
+;    out NULL, 1		; discard lsb (unnecessary, should be 0)
+    mov x, osr			; final osr bit controls T12 clk low stretch
+    jmp !x normclk		; normal if pull data msb=0, stretch if msb=1
+    irq set 5			; extend T12 clk low phase (delay T13 start)
+				; until irq5 cleared by main program
+normclk:
+    wait 1 irq 0		; clk falling edge + 17 pck (stay in sync)
+.wrap
+
+/*
+.program fake_set
+; fake program assembles set instructions to be used in main program
+    set pins, 0			; (RESET_=0, TROMIN=0, VPP=0)
+    set pins, 1			; (RESET_=0, TROMIN=0, VPP=1)
+*/
+
+% c-sdk {
+// main program defines
+#if (PIO_PROGRAM_PROM == 1) && (PIO_PROGRAM_EEPROM == 1)
+  #error "can't set both PIO_PROGRAM_PROM and PIO_PROGRAM_EEPROM"
+#endif
+
+#if PIO_PROGRAM_PROM == 1
+  #define PROGRAM_PROM
+#elif PIO_PROGRAM_EEPROM == 1
+  #define PROGRAM_EEPROM
+#endif
+
+static inline void onecycle_program_init(PIO pio, uint sm, uint offset, uint pin) {
+    pio_sm_config c = onecycle_program_get_default_config(offset);
+
+    // Map the state machine's SIDESET pin group
+    sm_config_set_sideset_pin_base(&c, pin);		// 1-pin: OSCIN
+
+    sm_config_set_clkdiv_int_frac8(&c, 3, 0);		// 150/3 = 50MHz
+
+    // Set this pin's GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, pin);
+    // Set the pin direction to output at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
+
+    // Load our configuration, and jump to the start of the program
+    pio_sm_init(pio, sm, offset, &c);
+
+    // Start the state machine running
+    pio_sm_set_enabled(pio, sm, true);
+}
+
+
+static inline void mainloop_program_init(PIO pio, uint sm, uint offset, uint opin, uint ipin) {
+    pio_sm_config c = mainloop_program_get_default_config(offset);
+
+    // Map the state machine's OUT pin group
+    sm_config_set_out_pins(&c, opin+1, 1);		// 1-pin: TROMIN
+
+    // Map the state machine's SET pin group (overlaps with OUT)
+    sm_config_set_set_pins(&c, opin, 3);		// RESET_, TROMIN, VPP
+
+    // Map the state machine's IN pin group
+    sm_config_set_in_pins(&c, ipin);			// SDOP
+
+    sm_config_set_out_shift(
+	&c,
+	true,  // Shift-to-right (lsb out first)
+	false, // Autopush disabled
+	0
+    );
+
+    sm_config_set_in_shift(
+	&c,
+	true,  // Shift-to-right (lsb in first, msb last)
+	false, // Autopush disabled
+	0
+    );
+
+    sm_config_set_clkdiv_int_frac8(&c, 3, 0);		// 150/3 = 50MHz
+
+    // Set output pins GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, opin);
+    pio_gpio_init(pio, opin+1);
+    pio_gpio_init(pio, opin+2);
+    // Set the pin direction to output at the PIO
+#if INVERT_TROMIN == 1
+    gpio_set_outover(opin+1, GPIO_OVERRIDE_INVERT);	// invert TROMIN output
+#endif
+    gpio_set_outover(opin+2, GPIO_OVERRIDE_INVERT);	// invert RESET_ output
+    pio_sm_set_consecutive_pindirs(pio, sm, opin, 3, true);
+
+    // Set input pins GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, ipin);
+#if INVERT_SDOP == 1
+    gpio_set_inover(ipin, GPIO_OVERRIDE_INVERT);	// invert SDOP input
+#endif
+    pio_sm_set_consecutive_pindirs(pio, sm, ipin, 1, false);
+
+    // Load our configuration, and jump to the start of the program
+    pio_sm_init(pio, sm, offset, &c);
+			// pre-initialize pins & registers
+			// set pins, 4 or 5  (RESET_=1, TROMIN=0, VPP=0 or 1)
+    pio_sm_exec(pio, sm, pio_encode_set(pio_pins, 4 | PIO_PROGRAM_PROM));
+
+    pio_sm_put_blocking(pio, sm, 0x00000100);	// x=256 reset cycles
+    pio_sm_exec(pio, sm, pio_encode_pull(false, false));
+    pio_sm_exec(pio, sm, pio_encode_mov(pio_x, pio_osr));
+
+	// end sync loop 1 cycle early to setup data out for 1st instruction
+	// before rising edge of 1st non-sync clock
+    pio_sm_put_blocking(pio, sm, 0x0000080C);	// y=2048+13-1 sync cycles
+    pio_sm_exec(pio, sm, pio_encode_pull(false, false));
+    pio_sm_exec(pio, sm, pio_encode_mov(pio_y, pio_osr));
+
+    // Start the state machine running; will wait for data from main program
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}
