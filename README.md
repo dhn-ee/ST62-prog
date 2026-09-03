@@ -26,8 +26,9 @@ cmake -DPICO_BOARD=pico2 ..
 ``` 
 **To compile firmware:**
 1.  Configure options in st62_prog.pio:  actions (dump or program) and target cpu TROMIN and SDOP pins active high or low
-2.  convert image data for EPROM and EEPROM to C header format and add to prom-image.h
-3.  compile firmware 3 times with different options (dump, program EPROM, program EEPROM) and rename output file for each.  Copy 1 of the 3 firmware .uf2 files onto the Pico2 (online tutorial).
+2.  In st62_prog.c modify all st62_program_region(), st62_writeEE_region() calls to match your target memory addresses.  Avoid many consecutive 0 for EPROM and consecutive 0xff for EEPROM in a region (see below).  Compile will halt with an error until this is done.
+3.  convert image data for EPROM and EEPROM to C header format and add to prom-image.h
+4.  compile firmware 3 times with different options (dump, program EPROM, program EEPROM) and rename output file for each.  Copy 1 of the 3 firmware .uf2 files onto the Pico2 (online tutorial).
 ```
 cd pico/pico-projects/build/ST62-prog
 make
@@ -54,7 +55,7 @@ Programming 3884 bytes takes 8 seconds and the led will blink but there is no se
 
 This programmer does not perform a blank check because the reserved areas are target dependent.  The recommended 1st EPROM dump can be blank checked externally.
 
-Blank bytes are 0 therefore this programmer will skip over 0 in the rom image data.  Because of hard real-time requirements (see DESIGN.txt) do not call st62_program_region() with a region that contains many consecutive 0.  Break it up into multiple calls for smaller regions with no consecutive 0.
+EPROM blank bytes are 0 therefore this programmer will skip over 0 in the rom image data.  Because of hard real-time requirements (see DESIGN.txt) do not call st62_program_region() with a region that contains many consecutive 0.  Break it up into multiple calls for smaller regions with no consecutive 0.  Same is true for 0xff in EEPROM and st62_writeEE_region().
 
 ## Resources
 More details in DESIGN.txt and SPEC.txt  
