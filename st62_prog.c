@@ -53,7 +53,7 @@ static char rxbuf[8192];
 
 
 // 32-bit data/instruction sent to PIO TXFIFO has 4 parts:
-//    [31] T12 clock low stretch enable (delay T13 start)
+//    [31] T13 clock low stretch enable
 // [30:24] zeros (shifted out for cycles T9-T13)
 // [23:16] pio 16-bit instruction to set or clear VPP output
 //   [7:0] data, opcode, etc. for cycles T1-T8
@@ -108,7 +108,7 @@ static int __no_inline_not_in_flash_func(st62_program_byte)(uint8_t addr,
     st62_Mcycle(VPP1(0x0d), &rxdata);		// (opcode) LDI addr, wdata
     st62_Mcycle(VPP1(addr), &rxdata);		// address
     st62_setupchecksync();
-    st62_Mcycle((1<<31)|VPP1(wdata), &rxdata);	// data; stretch T12 low clk
+    st62_Mcycle((1<<31)|VPP1(wdata), &rxdata);	// data; stretch T13 low clk
     if (st62_syncfail)
       return -1;
 

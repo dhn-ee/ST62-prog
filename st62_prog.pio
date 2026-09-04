@@ -31,7 +31,7 @@
 	; pck = 1 PIO clk cycle
 	; irq0 set 16 pck after fall edge, cleared 11 pck later
 	; irq1 set 8 pck after rise edge
-	; irq5 set during T12 to extend low clock if pull data msb=1
+	; irq5 set during T13 to extend low clock if pull data msb=1
 .program onecycle
 .side_set 1
 
@@ -66,7 +66,7 @@ syncloop:			; reset off; clock Y cycles for synchronization
 	; before r-edge T1-T8 shift OSR data out to TROMIN
 	; before T9 shift OSR+execute 16-bit instruction to set/clear VPP
 	; before r-edge T9-T13 shift OSR zeros out to TROMIN
-	; before T13 if remaining OSR!=0 then extend low clock (delay T13)
+	; in T13 if remaining OSR!=0 then extend low clock
     pull			; 32-bit packed data/instruction
     in NULL, 20			; align lsb of previous 12-bit input data and
     push			; send to main prog
@@ -74,6 +74,10 @@ syncloop:			; reset off; clock Y cycles for synchronization
 bitloop:			; ST62 core cycles T1-T12
     wait 1 irq 1		; clk rising edge + 9 pck
     jmp x!=y skipvpp		; ST62 core cycle T8 (x=3)
+    ;;### bug: VPP changes in T9 1 cycle too late; currently not a problem
+    ;;### because VPP is kept constant through entire programming action.
+    ;;### Needs more than simple fix because exec set in T8 will output 0 on
+    ;;### TROMIN right before out msb (should or msb into exec instruction)
     out exec, 16		; execute 'set pins, 1/0' to set/clear VPP
 skipvpp:
     out pins, 1			; shifts lsb out 11 pck after clk rise
@@ -81,11 +85,11 @@ skipvpp:
     in pins, 1			; shift in SDOP just before clk rise edge
     jmp x-- bitloop
 				; unroll end of loop for T13 setup/clk stretch
-    wait 1 irq 1		; in T12 high phase
+    wait 1 irq 1		; in T13 high phase
 ;    out NULL, 1		; discard lsb (unnecessary, should be 0)
-    mov x, osr			; final osr bit controls T12 clk low stretch
+    mov x, osr			; final osr bit controls T13 clk low stretch
     jmp !x normclk		; normal if pull data msb=0, stretch if msb=1
-    irq set 5			; extend T12 clk low phase (delay T13 start)
+    irq set 5			; extend T13 clk low phase (delay T13 start)
 				; until irq5 cleared by main program
 normclk:
     wait 1 irq 0		; clk falling edge + 17 pck (stay in sync)

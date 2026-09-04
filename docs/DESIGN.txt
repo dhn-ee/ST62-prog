@@ -46,7 +46,7 @@ cycle (T1-T13)
 1. T1-T8 shift OSR lsb data out to TROMIN
 2. T8 set/clear VPP by shifting and executing a 16-bit pio instruction off OSR
 3. T9-T13 shift OSR zeros out to TROMIN
-4. T12 when programming delay T13 start by extending clock low for 1ms
+4. T13 when programming extend clock low for 1ms
 
 Changing VPP during T8 was implemented because the spec describes it but in
 practice isn't useful because VPP takes more than 400ns to stabilize.  Target
