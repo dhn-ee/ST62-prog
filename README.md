@@ -26,7 +26,7 @@ cmake -DPICO_BOARD=pico2 ..
 ``` 
 **To compile firmware:**
 1.  Configure options in st62_prog.pio:  actions (dump or program) and target cpu TROMIN and SDOP pins active high or low
-2.  In st62_prog.c modify all st62_program_region(), st62_writeEE_region() calls to match your target memory addresses.  Avoid many consecutive 0 for EPROM and consecutive 0xff for EEPROM in a region (see below).  Compile will halt with an error until this is done.
+2.  In st62_prog.c modify control register address defines and all st62_program_region(), st62_writeEE_region() calls to match your target memory addresses.  Avoid many consecutive 0 for EPROM and consecutive 0xff for EEPROM in a region (see below).  Compile will halt with an error until this is done.
 3.  convert image data for EPROM and EEPROM to C header format and add to prom-image.h
 4.  compile firmware 3 times with different options (dump, program EPROM, program EEPROM) and rename output file for each.  Copy 1 of the 3 firmware .uf2 files onto the Pico2 (online tutorial).
 ```
