@@ -59,11 +59,13 @@ static char rxbuf[8192];
 //   [7:0] data, opcode, etc. for cycles T1-T8
 // #define CLK_STRETCH (1 << 31)
 
-// PIO 16-bit instructions shifted left 8 bits used to set Vpp output
+// PIO 16-bit instructions shifted left 8 bits used to set Vpp enable
 #define PIO_SET_PINS_0 0xe00000	/* set pins, 0 (RESET_=0, TROMIN=0, VPP=0) */
 #define PIO_SET_PINS_1 0xe00100	/* set pins, 1 (RESET_=0, TROMIN=0, VPP=1) */
-#define VPP0(D) (PIO_SET_PINS_0 | D)
-#define VPP1(D) (PIO_SET_PINS_1 | D)
+  // in T8 right after data msb is output to TROMIN, the pio set instruction
+  // executes which would set TROMIN to 0 unless it includes the msb
+#define VPP0(D) (PIO_SET_PINS_0 | ((D & 0x80)<<2) | D)
+#define VPP1(D) (PIO_SET_PINS_1 | ((D & 0x80)<<2) | D)
 
 	// 1 ST62 machine cycle is 13 cycles (T1-T13) of 1.25MHz test clock
 	// MUST provide 32-bit data/instruction txdata before next M-cycle to
@@ -114,6 +116,8 @@ static int __no_inline_not_in_flash_func(st62_program_byte)(uint8_t addr,
 
     sleep_ms(1);
     pio->irq = (1 << 5);			// clear irq5 to resume clock
+    // CRITICAL TIMING here: only about 50 cpu cycles between clear irq5 and
+    // pio sm1 tries to read TXFIFO data sent by st62_Mcycle()
     st62_Mcycle(VPP1(0x00), &rxdata);
     cur_pc += 3;
     uint8_t prevdat = (uint8_t) rxdata;		// EPROM cell previous value

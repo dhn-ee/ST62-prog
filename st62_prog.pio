@@ -49,7 +49,7 @@
 	; external initialization before sm enable:
 	;   set pins, 4 or 5 (RESET_=1, TROMIN=0, VPP=0 or 1)
 	;   x=256 (reset cycles)
-	;   y=2048+13-1 (sync cycles after reset=1)
+	;   y=2048+13-1 (sync cycles after reset off)
 
 rstloop:			; reset active; clock X cycles
     wait 1 irq 1		; clk rising edge
@@ -60,12 +60,12 @@ syncloop:			; reset off; clock Y cycles for synchronization
     wait 1 irq 1		; clk rising edge
     jmp y-- syncloop
 
-    set y, 3			; change VPP before T9 (x=3)
+    set y, 4			; change VPP during T8 (x=4)
 .wrap_target
 	; ST62 core machine cycle loop (T1-T13)
-	; before r-edge T1-T8 shift OSR data out to TROMIN
-	; before T9 shift OSR+execute 16-bit instruction to set/clear VPP
-	; before r-edge T9-T13 shift OSR zeros out to TROMIN
+	; T1-T8 shift OSR data out to TROMIN
+	; in T8 shift OSR+execute 16-bit instruction to set/clear VPP
+	; T9-T13 shift OSR zeros out to TROMIN
 	; in T13 if remaining OSR!=0 then extend low clock
     pull			; 32-bit packed data/instruction
     in NULL, 20			; align lsb of previous 12-bit input data and
@@ -73,18 +73,15 @@ syncloop:			; reset off; clock Y cycles for synchronization
     set x, 11			; loop 12 times
 bitloop:			; ST62 core cycles T1-T12
     wait 1 irq 1		; clk rising edge + 9 pck
-    jmp x!=y skipvpp		; ST62 core cycle T8 (x=3)
-    ;;### bug: VPP changes in T9 1 cycle too late; currently not a problem
-    ;;### because VPP is kept constant through entire programming action.
-    ;;### Needs more than simple fix because exec set in T8 will output 0 on
-    ;;### TROMIN right before out msb (should or msb into exec instruction)
+    out pins, 1			; shifts lsb out 10 pck after clk rise
+    jmp x!=y skipvpp		; ST62 core cycle T8 (x=4)
+				; already shifted out 8-bits data, now shift+
     out exec, 16		; execute 'set pins, 1/0' to set/clear VPP
 skipvpp:
-    out pins, 1			; shifts lsb out 11 pck after clk rise
     wait 1 irq 0 [1]		; clk falling edge + 17 pck
     in pins, 1			; shift in SDOP just before clk rise edge
     jmp x-- bitloop
-				; unroll end of loop for T13 setup/clk stretch
+				; unroll end of loop for T13 clk low stretch
     wait 1 irq 1		; in T13 high phase
 ;    out NULL, 1		; discard lsb (unnecessary, should be 0)
     mov x, osr			; final osr bit controls T13 clk low stretch

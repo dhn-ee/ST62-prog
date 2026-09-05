@@ -25,7 +25,7 @@ GP0  UART0 TX (serial output)
 GP1  UART0 RX
 
 PIO pin usage:
-GP11  in        ST62 SDOP
+GP11  in        ST62 SDOP    (may configure input pad invert)
 GP13  set       VPP enable
 GP14  set,out   ST62 TROMIN  (may configure output pad invert)
 GP15  set       ST62 RESET_  (always configure output pad invert)
